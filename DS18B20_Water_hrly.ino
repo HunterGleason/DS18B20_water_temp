@@ -5,7 +5,8 @@
 #include <SPI.h>//Needed for working with SD card
 #include <SD.h>//Needed for working with SD card
 #include "ArduinoLowPower.h"//Needed for putting Feather M0 to sleep between samples
-#include <IridiumSBD.h>//Needed for communication with IRIDIUM modem  
+#include <IridiumSBD.h>//Needed for communication with IRIDIUM modem 
+#include <CSV_Parser.h>/*Needed for parsing CSV data*/ 
 
 // Data wire is plugged into port 12 on the Feather M0
 #define ONE_WIRE_BUS 12
@@ -39,16 +40,14 @@ const byte IridPwrPin = 6; // Pwr pin to Iridium modem
 
 
 /*Define global vars */
-String datestamp; //For printing to SD card and IRIDIUM payload 
+String datestamp; //For printing to SD card and IRIDIUM payload
 String filename = "tempdata.csv"; //Name of log file
 int sample_intv = 1; //Sample interval in minutes
-float sample_sum = 0.0;//Sample sum for computing daily average
-int sample_n = 0;//Sample N for computing daily average
-float avg_temp_c = 0;//Daily average var
-float min_temp_c = 100;//Daily min var
-float max_temp_c = -100;//Daily max var 
 DateTime IridTime;//Varible for keeping IRIDIUM transmit time
-int err; //IRIDIUM status var 
+int err; //IRIDIUM status var
+
+//Logger sleep time in milliseconds
+uint32_t sleep_time = sample_intv * 60000;
 
 /*Define functions */
 // Function takes a current DateTime and updates the date stamp as YYYY-MM-DD HH:MM:SS
@@ -106,41 +105,143 @@ void gen_datestamp(DateTime current_time)
   datestamp = year_str + "-" + month_str + "-" + day_str + " " + hour_str + ":" + min_str + ":" + sec_str;
 }
 
-void irid_daily_stats(DateTime current_time)
+/*Function reads data from a daily logfile, and uses Iridium modem to send all observations
+   for the previous day over satellite at midnight on the RTC.
+*/
+void send_daily_data(DateTime now)
 {
-  //Increase IridTime by one day
-  IridTime = DateTime(current_time.year(), current_time.month(), current_time.day(), current_time.hour(), 0, 0) + TimeSpan(1, 0, 0, 0);
 
-  avg_temp_c = sample_sum / (float) sample_n;
+  //For capturing Iridium errors
+  int err;
 
-  String irid_str = datestamp + "," + String(min_temp_c) + "," + String(avg_temp_c) + "," + String(max_temp_c);
-
+  //Provide power to Iridium Modem
   digitalWrite(IridPwrPin, HIGH);
+  delay(30);
 
-  delay(1000);
 
   // Start the serial port connected to the satellite modem
   IridiumSerial.begin(19200);
 
+  // Begin satellite modem operation
   err = modem.begin();
   if (err != ISBD_SUCCESS)
   {
     digitalWrite(LED, HIGH);
-    delay(3000);
+    delay(500);
     digitalWrite(LED, LOW);
-    delay(3000);
+    delay(500);
   }
 
-  // Send the message
-  err = modem.sendSBDText(irid_str.c_str());
-  if (err != ISBD_SUCCESS)
+
+  //Set paramters for parsing the log file
+  CSV_Parser cp("sf", true, ',');
+
+  //Varibles for holding data fields
+  char **datetimes;
+  float *h2o_temps;
+
+  //Read IRID.CSV
+  cp.readSDfile("/DAILY.CSV");
+
+
+  //Populate data arrays from logfile
+  datetimes = (char**)cp["datetime"];
+  h2o_temps = (float*)cp["h2o_temp_deg_c"];
+
+  //Binary bufffer for iridium transmission (max allowed buffer size 340 bytes)
+  uint8_t dt_buffer[340];
+  int buff_idx = 0;
+
+  //Get the start datetime stamp as string
+  String datestamp = String(datetimes[0]).substring(0, 10);
+
+  for (int i = 0; i < datestamp.length(); i++)
+  {
+    dt_buffer[buff_idx] = datestamp.charAt(buff_idx);
+    buff_idx++;
+  }
+
+  dt_buffer[buff_idx] = ':';
+  buff_idx++;
+
+
+  for (int day_hour = 0; day_hour < 24; day_hour++)
+  {
+
+
+    float mean_temp = 999.0;
+    boolean is_obs = false;
+    int N = 0;
+
+    //For each observation in the CSV
+    for (int i = 0; i < cp.getRowsCount(); i++) {
+
+      String datetime = String(datetimes[i]);
+      int dt_hour = datetime.substring(11, 13).toInt();
+
+      if (dt_hour == day_hour)
+      {
+
+        float h2o_temp = h2o_temps[i];
+
+        if (is_obs == false)
+        {
+          mean_temp = h2o_temp;
+          is_obs = true;
+          N++;
+        } else {
+          mean_temp = mean_temp + h2o_temp;
+          N++;
+        }
+
+      }
+    }
+
+    if (N > 0)
+    {
+      mean_temp = (mean_temp / N) * 10.0;
+    }
+
+    String datastring = String(round(mean_temp)) + ':';
+
+    for (int i = 0; i < datastring.length(); i++)
+    {
+      dt_buffer[buff_idx] = datastring.charAt(i);
+      buff_idx++;
+    }
+
+  }
+
+  digitalWrite(LED, HIGH);
+  //transmit binary buffer data via iridium
+  err = modem.sendSBDBinary(dt_buffer, buff_idx + 8);
+  digitalWrite(LED, LOW);
+
+  if(err != ISBD_SUCCESS)
   {
     digitalWrite(LED, HIGH);
-    delay(1000);
+    delay(5000);
     digitalWrite(LED, LOW);
-    delay(1000);
+    delay(5000);
+    digitalWrite(LED, HIGH);
+    delay(5000);
+    digitalWrite(LED, LOW);
+    delay(5000);
   }
+
+
+  //Kill power to Iridium Modem
+  digitalWrite(IridPwrPin, LOW);
+  delay(30);
+
+
+  //Remove previous daily values CSV
+  SD.remove("/DAILY.CSV");
+
+  //Update IridTime to next day at midnight 
+  IridTime = DateTime(now.year(), now.month(), now.day() + 1, 0, 0, 0);
 }
+
 
 /*
    The setup function. We only start the sensors, RTC and SD here
@@ -167,7 +268,7 @@ void setup(void)
   }
 
 
-  // Make sure RTC is available 
+  // Make sure RTC is available
   while (!rtc.begin())
   {
     digitalWrite(LED, HIGH);
@@ -212,19 +313,6 @@ void loop(void)
   if (tempC != DEVICE_DISCONNECTED_C)
   {
 
-    //Update the sample_sum and sample_n, min and max
-    sample_sum = sample_sum + tempC;
-    sample_n = sample_n + 1;
-    if (tempC > max_temp_c)
-    {
-      max_temp_c = tempC;
-    }
-    if (tempC < min_temp_c)
-    {
-      min_temp_c = tempC;
-    }
-
-
     //Gen current time stamp
     gen_datestamp(now);
 
@@ -238,7 +326,7 @@ void loop(void)
       if (dataFile)
       {
         String header = "DateTime,TempC";
-        dataFile.println("TempC");
+        dataFile.println(header);
         dataFile.close();
       }
 
@@ -257,20 +345,36 @@ void loop(void)
     digitalWrite(TmpPwrPin, LOW);
     delay(1);
 
-    //If new day, send daily temp. stats over IRIDIUM modem 
+    //If new day, send daily temp. stats over IRIDIUM modem
     if (now >= IridTime)
     {
-      irid_daily_stats(now);
+      send_daily_data(now);
     }
 
-    //Uncomment for trouble shooting 
-    digitalWrite(LED, HIGH);
-    delay(500);
-    digitalWrite(LED, LOW);
-    delay(500);
+    //Write header if first time writing to the file
+    if (!SD.exists("DAILY.CSV"))
+    {
+      dataFile = SD.open("DAILY.CSV", FILE_WRITE);
+      if (dataFile)
+      {
+        String header = "DateTime,TempC";
+        dataFile.println(header);
+        dataFile.close();
+      }
 
-    //Logger sleep time in milliseconds 
-    uint32_t sleep_time = sample_intv * 60000;
+    } else {
+      //Write datastring and close logfile on SD card
+      dataFile = SD.open("DAILY.CSV", FILE_WRITE);
+      if (dataFile)
+      {
+        dataFile.println(datastring);
+        dataFile.close();
+      }
+    }
+    digitalWrite(LED, HIGH);
+    delay(1000);
+    digitalWrite(LED, LOW);
+    delay(1000);
 
     //Put logger in low power mode for lenght 'sleep_time'
     LowPower.sleep(sleep_time);
