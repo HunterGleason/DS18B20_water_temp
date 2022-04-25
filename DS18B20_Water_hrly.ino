@@ -146,7 +146,7 @@ void send_daily_data(DateTime now)
 
   //Populate data arrays from logfile
   datetimes = (char**)cp["datetime"];
-  h2o_temps = (float*)cp["h2o_temp_deg_c"];
+  h2o_temps = (float*)cp["temp_c"];
 
   //Binary bufffer for iridium transmission (max allowed buffer size 340 bytes)
   uint8_t dt_buffer[340];
@@ -214,7 +214,7 @@ void send_daily_data(DateTime now)
 
   digitalWrite(LED, HIGH);
   //transmit binary buffer data via iridium
-  err = modem.sendSBDBinary(dt_buffer, buff_idx + 8);
+  err = modem.sendSBDBinary(dt_buffer, buff_idx);
   digitalWrite(LED, LOW);
 
   if(err != ISBD_SUCCESS)
@@ -228,6 +228,8 @@ void send_daily_data(DateTime now)
     digitalWrite(LED, LOW);
     delay(5000);
   }
+
+  err = modem.sleep();
 
 
   //Kill power to Iridium Modem
@@ -325,7 +327,7 @@ void loop(void)
       dataFile = SD.open(filename, FILE_WRITE);
       if (dataFile)
       {
-        String header = "DateTime,TempC";
+        String header = "datetime,temp_c";
         dataFile.println(header);
         dataFile.close();
       }
@@ -357,7 +359,7 @@ void loop(void)
       dataFile = SD.open("DAILY.CSV", FILE_WRITE);
       if (dataFile)
       {
-        String header = "DateTime,TempC";
+        String header = "datetime,temp_c";
         dataFile.println(header);
         dataFile.close();
       }
