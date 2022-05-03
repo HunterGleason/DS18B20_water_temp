@@ -45,7 +45,7 @@ Errors are conveyed via the built in LED (Pin 13) on the Adalogger as repeated b
 - Repeated 2-sec: Problem initializing SD card, check SD is inserted, [formatted](https://www.arduino.cc/reference/en/libraries/sd/) correctly. 
 - Repeated 1-sec: Problem parsing "PARAM.txt" parameter file, make sure it is present on SD card, named correctly, and formatted as specified above. 
 - Repeated 0.5-sec: Problem initializing RTC, check that wiring is correct, and coin cell is inserted and at appropriate voltage.
-- Repeated 1-sec blinks during Iridium transmission: Modem failed to begin, check wiring logging will NOT continue.  
+- Two consecutive 1-sec blinks during Iridium transmission: Modem failed to begin, check wiring logging may continue.  
 - Two consecutive 5-sec blinks during Iridium transmission: Send binary message failed, signal at location may not be adequate, however logging will continue, make sure a line rental is active with Ground Control and the modem is registered with credits available.  
 
 - Note that the built in LED will be held HIGH during Iridium transmission to indicate that it is trying to send the message. 
