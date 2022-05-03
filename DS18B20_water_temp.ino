@@ -123,12 +123,8 @@ void send_daily_data(DateTime now)
 
   // Begin satellite modem operation
   err = modem.begin();
-  if (err != ISBD_SUCCESS)
+  while(err != ISBD_SUCCESS)
   {
-    digitalWrite(LED, HIGH);
-    delay(1000);
-    digitalWrite(LED, LOW);
-    delay(1000);
     digitalWrite(LED, HIGH);
     delay(1000);
     digitalWrite(LED, LOW);
