@@ -41,13 +41,12 @@ const byte IridPwrPin = 6; // Pwr pin to Iridium modem
 
 /*Define global vars */
 String datestamp; //For printing to SD card and IRIDIUM payload
-String filename = "tempdata.csv"; //Name of log file
-int sample_intv = 1; //Sample interval in minutes
+char **filename; //Name of log file
+String filestr;//Filename as String 
+int16_t *sample_intvl;//Sample interval in minutes
 DateTime IridTime;//Varible for keeping IRIDIUM transmit time
 int err; //IRIDIUM status var
-
-//Logger sleep time in milliseconds
-uint32_t sleep_time = sample_intv * 60000;
+uint32_t sleep_time;//Logger sleep time in milliseconds
 
 /*Define functions */
 // Function takes a current DateTime and updates the date stamp as YYYY-MM-DD HH:MM:SS
@@ -127,9 +126,13 @@ void send_daily_data(DateTime now)
   if (err != ISBD_SUCCESS)
   {
     digitalWrite(LED, HIGH);
-    delay(500);
+    delay(1000);
     digitalWrite(LED, LOW);
-    delay(500);
+    delay(1000);
+    digitalWrite(LED, HIGH);
+    delay(1000);
+    digitalWrite(LED, LOW);
+    delay(1000);
   }
 
 
@@ -264,10 +267,31 @@ void setup(void)
   //Make sure a SD is available (1-sec flash LED means SD card did not initialize)
   while (!SD.begin(chipSelect)) {
     digitalWrite(LED, HIGH);
+    delay(2000);
+    digitalWrite(LED, LOW);
+    delay(2000);
+  }
+
+  //Set paramters for parsing the log file
+  CSV_Parser cp("sd", true, ',');
+
+
+  //Read IRID.CSV
+  while(!cp.readSDfile("/PARAM.txt"))
+  {
+    digitalWrite(LED, HIGH);
     delay(1000);
     digitalWrite(LED, LOW);
     delay(1000);
   }
+
+
+  //Populate data arrays from logfile
+  filename = (char**)cp["filename"];
+  sample_intvl = (int16_t*)cp["sample_intvl"];
+
+  sleep_time = sample_intvl[0] * 60000;
+  filestr = String(filename[0]);
 
 
   // Make sure RTC is available
@@ -322,9 +346,9 @@ void loop(void)
     String datastring = datestamp + "," + String(tempC);
 
     //Write header if first time writing to the file
-    if (!SD.exists(filename))
+    if (!SD.exists(filestr.c_str()))
     {
-      dataFile = SD.open(filename, FILE_WRITE);
+      dataFile = SD.open(filestr.c_str(), FILE_WRITE);
       if (dataFile)
       {
         String header = "datetime,temp_c";
@@ -334,7 +358,7 @@ void loop(void)
 
     } else {
       //Write datastring and close logfile on SD card
-      dataFile = SD.open(filename, FILE_WRITE);
+      dataFile = SD.open(filestr.c_str(), FILE_WRITE);
       if (dataFile)
       {
         dataFile.println(datastring);
@@ -373,10 +397,12 @@ void loop(void)
         dataFile.close();
       }
     }
+    
+    //Flash LED to indicate sample taken 
     digitalWrite(LED, HIGH);
-    delay(1000);
+    delay(250);
     digitalWrite(LED, LOW);
-    delay(1000);
+    delay(250);
 
     //Put logger in low power mode for lenght 'sleep_time'
     LowPower.sleep(sleep_time);
@@ -387,9 +413,9 @@ void loop(void)
     // Indicate to user there was an issue by blinking built in LED
     while (1) {
       digitalWrite(LED, HIGH);
-      delay(500);
+      delay(4000);
       digitalWrite(LED, LOW);
-      delay(500);
+      delay(4000);
     }
   }
 

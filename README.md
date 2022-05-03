@@ -1,5 +1,5 @@
 # DESCRIPTION
-This repository contains Arduino code for operating a Meter [HYDROS21 sensor](https://www.metergroup.com/en/meter-environment/products/hydros-21-water-level-sensor-conductivity-temperature-depth) and datalogger intended for use in hydrologic studies. The code was developed and tested on the [Adafruit Adalogger M0](https://www.adafruit.com/product/2796) based on the SAMD21 processor but likely will work on similar boards. This code contains functions for sending daily Iridium satellite communications using the [RockBlock 9603](https://www.iridium.com/products/rock-seven-rockblock-9603/) satellite modem. The code requires several parameters be specified using a parameter file, this is explained below. In addition, a wiring diagram of the required circuit is provided. Because this script uses the RockBlock Iridium modem it is important to make sure that a line rental with Ground Control is active and the modem is registered with credits available.  
+This repository contains Arduino code for operating a waterproof [DS18B20 temperature](https://www.adafruit.com/product/381) probe and datalogger intended for use in hydrologic studies. The code was developed and tested on the [Adafruit Adalogger M0](https://www.adafruit.com/product/2796) based on the SAMD21 processor but likely will work on similar boards. This code contains functions for sending daily Iridium satellite communications using the [RockBlock 9603](https://www.iridium.com/products/rock-seven-rockblock-9603/) satellite modem. The code requires several parameters be specified using a parameter file, this is explained below. In addition, a wiring diagram of the required circuit is provided. Because this script uses the RockBlock Iridium modem it is important to make sure that a line rental with Ground Control is active and the modem is registered with credits available.  
 
 # DEPENDENCIES 
 There are several libraries required for running this code in addition to having the Arduino IDE installed and [configured](https://learn.adafruit.com/adafruit-feather-m0-adalogger/setup) to work with the Adalogger M0, and are listed below.
@@ -11,7 +11,6 @@ There are several libraries required for running this code in addition to having
 - "ArduinoLowPower.h"//Needed for putting Feather M0 to sleep between samples
 - <IridiumSBD.h>//Needed for communication with IRIDIUM modem 
 - <CSV_Parser.h>//Needed for parsing CSV data
-- <SDI12.h>//Needed for SDI-12 communication
 
 # LOGGER OPERATION
 This section outlines the steps for operating the logger.
@@ -35,9 +34,10 @@ Once the desired time has been set on the RTC, the logging script "HYDROS21.ino"
 ## Error Codes
 Errors are conveyed via the built in LED (Pin 13) on the Adalogger as repeated blinking at specific time intervals, these intervals and their meaning are listed below:
 
+- Repeated 4-sec: Problem connecting to DS18B20 temperature probe, check wiring. 
 - Repeated 2-sec: Problem initializing SD card, check SD is inserted, [formatted](https://www.arduino.cc/reference/en/libraries/sd/) correctly. 
 - Repeated 1-sec: Problem parsing "PARAM.txt" parameter file, make sure it is present on SD card, named correctly, and formatted as specified above. 
-- Repeated 0.5-sec: Problem initializing RTC, check that wiring is correct, and coin cell is inserted and at appropriate voltage. 
+- Repeated 0.5-sec: Problem initializing RTC, check that wiring is correct, and coin cell is inserted and at appropriate voltage.
 - Two consecutive 1-sec blinks during Iridium transmission: Modem failed to begin, check wiring, however logging will continue.  
 - Two consecutive 5-sec blinks during Iridium transmission: Send binary message failed, signal at location may not be adequate, however logging will continue, make sure a line rental is active with Ground Control and the modem is registered with credits available.  
 
