@@ -220,6 +220,13 @@ void send_daily_data(DateTime now)
   err = modem.sendSBDBinary(dt_buffer, buff_idx);
   digitalWrite(LED, LOW);
 
+  //If attempt failed try again 
+  if(err != ISBD_SUCCESS)
+  {
+    err = modem.sendSBDBinary(dt_buffer, buff_idx);
+  }
+
+  // If 2nd attempt failed indicate failed transmission using LED
   if(err != ISBD_SUCCESS)
   {
     digitalWrite(LED, HIGH);
@@ -231,8 +238,6 @@ void send_daily_data(DateTime now)
     digitalWrite(LED, LOW);
     delay(5000);
   }
-
-  err = modem.sleep();
 
 
   //Kill power to Iridium Modem
@@ -290,7 +295,7 @@ void setup(void)
   filename = (char**)cp["filename"];
   sample_intvl = (int16_t*)cp["sample_intvl"];
 
-  sleep_time = sample_intvl[0] * 60000;
+  sleep_time = sample_intvl[0] * 1000;
   filestr = String(filename[0]);
 
 

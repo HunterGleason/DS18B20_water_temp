@@ -23,7 +23,7 @@ filename,sample_intvl
 MYFILE.CSV,10
 ```
 
-Where the "filename" header declares the name of the log file to be written (!!MUST BE LESS THEN 8 CHARACTERS IN LENGTH!!) and is user defined, the "sampl_intvl" header stands for sample interval and declares the sampling rate of the logger in minutes. Note that the extension ".CSV" is capitalized. Note that every sample will be written to the SD card but only hourly averages will be sent over the IRIDIUM modem daily. The sapling rate should be <60 minutes.
+Where the "filename" header declares the name of the log file to be written (!!MUST BE LESS THEN 8 CHARACTERS IN LENGTH!!) and is user defined, the "sampl_intvl" header stands for sample interval and declares the sampling rate of the logger in seconds. Note that the extension ".CSV" is capitalized. Note that every sample will be written to the SD card but only hourly averages will be sent over the IRIDIUM modem daily. The sapling rate should be <60 minutes.
 
 ## Set the time on the RTC
 To keep track of time this code relies on a Real Time Clock, specifically the PCF8523. To set the time run the [pcf8523 script](https://learn.adafruit.com/adafruit-pcf8523-real-time-clock/rtc-with-arduino) from the "RTClib" library and upload it to the MCU BEFORE uploading the logging script. We recommend setting RTC to UTC time to avoid complications with daylight savings time. 
@@ -50,4 +50,3 @@ Errors are conveyed via the built in LED (Pin 13) on the Adalogger as repeated b
 
 - Note that the built in LED will be held HIGH during Iridium transmission to indicate that it is trying to send the message. 
 - During normal operation while the MCU is sleeping the built in LED will be OFF, this is OK, the logger is still operating, however code cannot be uploaded without double clicking the reset button during upload.
-- A 0.25-sec LED flash at the end of each sample will occur for each sample to indicate a sample was just taken, this is normal, and the latching relay should be heard during each sample as well.  
