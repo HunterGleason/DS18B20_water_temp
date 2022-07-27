@@ -6,7 +6,7 @@
 #include <SD.h>//Needed for working with SD card
 #include "ArduinoLowPower.h"//Needed for putting Feather M0 to sleep between samples
 #include <IridiumSBD.h>//Needed for communication with IRIDIUM modem 
-#include <CSV_Parser.h>/*Needed for parsing CSV data*/ 
+#include <CSV_Parser.h>/*Needed for parsing CSV data*/
 
 // Data wire is plugged into port 12 on the Feather M0
 #define ONE_WIRE_BUS 12
@@ -42,72 +42,19 @@ const byte IridPwrPin = 6; // Pwr pin to Iridium modem
 /*Define global vars */
 String datestamp; //For printing to SD card and IRIDIUM payload
 char **filename; //Name of log file
-String filestr;//Filename as String 
+String filestr;//Filename as String
 int16_t *sample_intvl;//Sample interval in minutes
 DateTime IridTime;//Varible for keeping IRIDIUM transmit time
+DateTime dt;//Varible for keeping current time
 int err; //IRIDIUM status var
 uint32_t sleep_time;//Logger sleep time in milliseconds
 
-/*Define functions */
-// Function takes a current DateTime and updates the date stamp as YYYY-MM-DD HH:MM:SS
-void gen_datestamp(DateTime current_time)
-{
 
-  String month_str;
-  String day_str;
-  String hour_str;
-  String min_str;
-  String sec_str;
-
-  String year_str = String(current_time.year());
-
-  int month_int = current_time.month();
-  if (month_int < 10)
-  {
-    month_str = "0" + String(month_int);
-  } else {
-    month_str = String(month_int);
-  }
-
-  int day_int = current_time.day();
-  if (day_int < 10)
-  {
-    day_str = "0" + String(day_int);
-  } else {
-    day_str = String(day_int);
-  }
-
-  int hour_int = current_time.hour();
-  if (hour_int < 10)
-  {
-    hour_str = "0" + String(hour_int);
-  } else {
-    hour_str = String(hour_int);
-  }
-
-  int min_int = current_time.minute();
-  if (min_int < 10)
-  {
-    min_str = "0" + String(min_int);
-  } else {
-    min_str = String(min_int);
-  }
-
-  int sec_int = current_time.second();
-  if (sec_int < 10)
-  {
-    sec_str = "0" + String(sec_int);
-  } else {
-    sec_str = String(sec_int);
-  }
-
-  datestamp = year_str + "-" + month_str + "-" + day_str + " " + hour_str + ":" + min_str + ":" + sec_str;
-}
 
 /*Function reads data from a daily logfile, and uses Iridium modem to send all observations
    for the previous day over satellite at midnight on the RTC.
 */
-void send_daily_data(DateTime now)
+void send_daily_data()
 {
 
   //For capturing Iridium errors
@@ -115,7 +62,7 @@ void send_daily_data(DateTime now)
 
   //Provide power to Iridium Modem
   digitalWrite(IridPwrPin, HIGH);
-  delay(30);
+  delay(100);
 
 
   // Start the serial port connected to the satellite modem
@@ -123,7 +70,7 @@ void send_daily_data(DateTime now)
 
   // Begin satellite modem operation
   err = modem.begin();
-  if(err != ISBD_SUCCESS)
+  if (err != ISBD_SUCCESS)
   {
     digitalWrite(LED, HIGH);
     delay(1000);
@@ -220,14 +167,15 @@ void send_daily_data(DateTime now)
   err = modem.sendSBDBinary(dt_buffer, buff_idx);
   digitalWrite(LED, LOW);
 
-  //If attempt failed try again 
-  if(err != ISBD_SUCCESS)
+  //If attempt failed try again
+  if (err != ISBD_SUCCESS)
   {
+    err = modem.begin();
     err = modem.sendSBDBinary(dt_buffer, buff_idx);
   }
 
   // If 2nd attempt failed indicate failed transmission using LED
-  if(err != ISBD_SUCCESS)
+  if (err != ISBD_SUCCESS)
   {
     digitalWrite(LED, HIGH);
     delay(5000);
@@ -248,8 +196,8 @@ void send_daily_data(DateTime now)
   //Remove previous daily values CSV
   SD.remove("/DAILY.CSV");
 
-  //Update IridTime to next day at midnight 
-  IridTime = DateTime(now.year(), now.month(), now.day() + 1, 0, 0, 0);
+  //Update IridTime to next day at midnight
+  IridTime = DateTime(dt.year(), dt.month(), dt.day(), 0, 0, 0) + TimeSpan(1, 0, 0, 0);
 }
 
 
@@ -266,8 +214,21 @@ void setup(void)
   pinMode(IridPwrPin, OUTPUT);
   digitalWrite(IridPwrPin, LOW);
 
-  // Start up the DallasTemp library
+  // Start up the DallasTemp library and test sensor
   sensors.begin();
+  digitalWrite(TmpPwrPin, HIGH);
+  delay(300);
+  sensors.setResolution(12);
+  sensors.requestTemperatures(); // Send the command to get temperatures
+  float tempC = sensors.getTempCByIndex(0);
+  while(tempC != DEVICE_DISCONNECTED_C)
+  {
+     digitalWrite(LED, HIGH);
+    delay(4000);
+    digitalWrite(LED, LOW);
+    delay(4000);
+  }
+
 
   //Make sure a SD is available (1-sec flash LED means SD card did not initialize)
   while (!SD.begin(chipSelect)) {
@@ -282,7 +243,7 @@ void setup(void)
 
 
   //Read IRID.CSV
-  while(!cp.readSDfile("/PARAM.txt"))
+  while (!cp.readSDfile("/PARAM.txt"))
   {
     digitalWrite(LED, HIGH);
     delay(1000);
@@ -309,10 +270,10 @@ void setup(void)
   }
 
   //Get current datetime
-  DateTime now = rtc.now();
+  dt = rtc.now();
 
   //Set iridium transmit time (IridTime) to end of current day (midnight)
-  IridTime = DateTime(now.year(), now.month(), now.day() + 1, 0, 0, 0);
+  IridTime = DateTime(dt.year(), dt.month(), dt.day(), 0, 0, 0) + TimeSpan(1, 0, 0, 0);
 
 
 }
@@ -322,15 +283,23 @@ void setup(void)
 */
 void loop(void)
 {
+  //Get current datetime from RTC
+  dt = rtc.now();
+
+  //If new day, send daily temp. stats over IRIDIUM modem
+  if (dt >= IridTime)
+  {
+    send_daily_data();
+  }
 
   //Power the DS18B20
   digitalWrite(TmpPwrPin, HIGH);
 
+  //let settle
+  delay(300);
+
   //Set resolution to 12 bit, 10 bit is too corse
   sensors.setResolution(12);
-
-  //Get current datetime from RTC
-  DateTime now = rtc.now();
 
   // call sensors.requestTemperatures() to issue a global temperature
   // request to all devices on the bus
@@ -344,11 +313,8 @@ void loop(void)
   if (tempC != DEVICE_DISCONNECTED_C)
   {
 
-    //Gen current time stamp
-    gen_datestamp(now);
-
     //Datastring to write to SD card
-    String datastring = datestamp + "," + String(tempC);
+    String datastring = dt.timestamp() + "," + String(tempC);
 
     //Write header if first time writing to the file
     if (!SD.exists(filestr.c_str()))
@@ -376,12 +342,6 @@ void loop(void)
     digitalWrite(TmpPwrPin, LOW);
     delay(1);
 
-    //If new day, send daily temp. stats over IRIDIUM modem
-    if (now >= IridTime)
-    {
-      send_daily_data(now);
-    }
-
     //Write header if first time writing to the file
     if (!SD.exists("DAILY.CSV"))
     {
@@ -402,8 +362,8 @@ void loop(void)
         dataFile.close();
       }
     }
-    
-    //Flash LED to indicate sample taken 
+
+    //Flash LED to indicate sample taken
     digitalWrite(LED, HIGH);
     delay(250);
     digitalWrite(LED, LOW);
@@ -416,12 +376,14 @@ void loop(void)
 
   } else {
     // Indicate to user there was an issue by blinking built in LED
-    while (1) {
+    for (int i = 0; i < 100; i++)
+    {
       digitalWrite(LED, HIGH);
-      delay(4000);
+      delay(100);
       digitalWrite(LED, LOW);
-      delay(4000);
+      delay(100);
     }
+
   }
 
 }
