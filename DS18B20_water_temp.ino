@@ -248,7 +248,7 @@ void setup(void)
   pinMode(IridPwrPin, OUTPUT);
   digitalWrite(IridPwrPin, LOW);
   pinMode(TmpPwrPin, OUTPUT);
-  digitalWrite(TmpPwrPin, LOW);
+  digitalWrite(TmpPwrPin, HIGH);
 
   //Make sure a SD is available (2-sec flash LED means SD card did not initialize)
   while (!SD.begin(chipSelect)) {
@@ -313,21 +313,20 @@ void setup(void)
                            start_second);
 
   // Start up the DallasTemp library and test sensor
-  sensors.begin();
-  digitalWrite(TmpPwrPin, HIGH);
+  digitalWrite(TmpPwrPin,HIGH);
   delay(300);
+  sensors.begin();
   sensors.setResolution(12);
   sensors.requestTemperatures(); // Send the command to get temperatures
   float tempC = sensors.getTempCByIndex(0);
-  while (tempC != DEVICE_DISCONNECTED_C)
+  while (tempC == DEVICE_DISCONNECTED_C)
   {
     digitalWrite(LED, HIGH);
     delay(4000);
     digitalWrite(LED, LOW);
     delay(4000);
   }
-
-
+  digitalWrite(TmpPwrPin,LOW);
 }
 
 /*
@@ -349,6 +348,9 @@ void loop(void)
     transmit_time = (transmit_time + TimeSpan(0, irid_freq_hrs, 0, 0));
   }
 
+  //Drive temp. pwr pin high
+  digitalWrite(TmpPwrPin,HIGH);
+    
   //Set resolution to 12 bit, 10 bit is too corse
   sensors.setResolution(12);
 
@@ -359,6 +361,9 @@ void loop(void)
   // After we got the temperatures, we can print them here.
   // We use the function ByIndex, and as an example get the temperature from the first sensor only.
   float tempC = sensors.getTempCByIndex(0);
+
+  //Drive temp. pwr pin high
+  digitalWrite(TmpPwrPin,LOW);
 
   String datastring = present_time.timestamp() + "," + String(tempC);
 
