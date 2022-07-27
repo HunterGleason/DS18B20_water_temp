@@ -29,8 +29,7 @@ uint32_t sleep_time;// Logger sleep time in milliseconds
 DateTime transmit_time;// Datetime varible for keeping IRIDIUM transmit time
 DateTime present_time;// Var for keeping the current time
 int err; //IRIDIUM status var
-String myCommand   = "";// SDI-12 command var
-String sdiResponse = "";// SDI-12 responce var
+
 
 /*Define Iridium seriel communication as Serial1 */
 #define IridiumSerial Serial1
@@ -42,64 +41,11 @@ String sdiResponse = "";// SDI-12 responce var
 RTC_PCF8523 rtc; // Setup a PCF8523 Real Time Clock instance
 File dataFile; // Setup a log file instance
 IridiumSBD modem(IridiumSerial); // Declare the IridiumSBD object
-SDI12 mySDI12(dataPin);// Define the SDI-12 bus
 
 // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
 OneWire oneWire(ONE_WIRE_BUS);
 // Pass our oneWire reference to Dallas Temperature.
 DallasTemperature sensors(&oneWire);
-
-/*Function pings RTC for datetime and returns formated datestamp 'YYYY-MM-DD HH:MM:SS,' */
-String gen_date_str(DateTime now) {
-
-  // Format current date time values for writing to SD
-  String yr_str = String(now.year());
-  String mnth_str;
-  if (now.month() >= 10)
-  {
-    mnth_str = String(now.month());
-  } else {
-    mnth_str = "0" + String(now.month());
-  }
-
-  String day_str;
-  if (now.day() >= 10)
-  {
-    day_str = String(now.day());
-  } else {
-    day_str = "0" + String(now.day());
-  }
-
-  String hr_str;
-  if (now.hour() >= 10)
-  {
-    hr_str = String(now.hour());
-  } else {
-    hr_str = "0" + String(now.hour());
-  }
-
-  String min_str;
-  if (now.minute() >= 10)
-  {
-    min_str = String(now.minute());
-  } else {
-    min_str = "0" + String(now.minute());
-  }
-
-
-  String sec_str;
-  if (now.second() >= 10)
-  {
-    sec_str = String(now.second());
-  } else {
-    sec_str = "0" + String(now.second());
-  }
-
-  // Assemble a consistently formatted date string for logging to SD or sending over IRIDIUM modem
-  String datestring = yr_str + "-" + mnth_str + "-" + day_str + " " + hr_str + ":" + min_str + ":" + sec_str + ",";
-
-  return datestring;
-}
 
 /*Function reads data from a .csv logfile, and uses Iridium modem to send all observations
    since the previous transmission over satellite at midnight on the RTC.
@@ -373,9 +319,9 @@ void setup(void)
   sensors.setResolution(12);
   sensors.requestTemperatures(); // Send the command to get temperatures
   float tempC = sensors.getTempCByIndex(0);
-  while(tempC != DEVICE_DISCONNECTED_C)
+  while (tempC != DEVICE_DISCONNECTED_C)
   {
-     digitalWrite(LED, HIGH);
+    digitalWrite(LED, HIGH);
     delay(4000);
     digitalWrite(LED, LOW);
     delay(4000);
@@ -403,53 +349,75 @@ void loop(void)
     transmit_time = (transmit_time + TimeSpan(0, irid_freq_hrs, 0, 0));
   }
 
-  
+  //Set resolution to 12 bit, 10 bit is too corse
+  sensors.setResolution(12);
 
-  //Sample the HYDROS21 sensor for a reading
-  String datastring = sample_hydros21();
+  // call sensors.requestTemperatures() to issue a global temperature
+  // request to all devices on the bus
+  sensors.requestTemperatures(); // Send the command to get temperatures
 
-  //Write header if first time writing to the logfile
-  if (!SD.exists(filestr.c_str()))
+  // After we got the temperatures, we can print them here.
+  // We use the function ByIndex, and as an example get the temperature from the first sensor only.
+  float tempC = sensors.getTempCByIndex(0);
+
+  String datastring = present_time.timestamp() + "," + String(tempC);
+
+  // Check if reading was successful
+  if (tempC != DEVICE_DISCONNECTED_C)
   {
-    dataFile = SD.open(filestr.c_str(), FILE_WRITE);
-    if (dataFile)
+
+    //Write header if first time writing to the logfile
+    if (!SD.exists(filestr.c_str()))
     {
-      dataFile.println("datetime,h2o_temp_deg_c");
-      dataFile.close();
+      dataFile = SD.open(filestr.c_str(), FILE_WRITE);
+      if (dataFile)
+      {
+        dataFile.println("datetime,h2o_temp_deg_c");
+        dataFile.close();
+      }
+
+    } else {
+      //Write datastring and close logfile on SD card
+      dataFile = SD.open(filestr.c_str(), FILE_WRITE);
+      if (dataFile)
+      {
+        dataFile.println(datastring);
+        dataFile.close();
+      }
+
     }
 
+
+    /*The HOURLY.CSV file is the same as the log-file, but only contains observations since the last transmission and is used by the send_hourly_data() function */
+
+    //Write header if first time writing to the DAILY file
+    if (!SD.exists("HOURLY.CSV"))
+    {
+      //Write datastring and close logfile on SD card
+      dataFile = SD.open("HOURLY.CSV", FILE_WRITE);
+      if (dataFile)
+      {
+        dataFile.println("datetime,h2o_temp_deg_c");
+        dataFile.close();
+      }
+    } else {
+
+      //Write datastring and close logfile on SD card
+      dataFile = SD.open("HOURLY.CSV", FILE_WRITE);
+      if (dataFile)
+      {
+        dataFile.println(datastring);
+        dataFile.close();
+      }
+    }
   } else {
-    //Write datastring and close logfile on SD card
-    dataFile = SD.open(filestr.c_str(), FILE_WRITE);
-    if (dataFile)
+        // Indicate to user there was an issue by blinking built in LED
+    for (int i = 0; i < 100; i++)
     {
-      dataFile.println(datastring);
-      dataFile.close();
-    }
-
-  }
-
-
-  /*The HOURLY.CSV file is the same as the log-file, but only contains observations since the last transmission and is used by the send_hourly_data() function */
-
-  //Write header if first time writing to the DAILY file
-  if (!SD.exists("HOURLY.CSV"))
-  {
-    //Write datastring and close logfile on SD card
-    dataFile = SD.open("HOURLY.CSV", FILE_WRITE);
-    if (dataFile)
-    {
-      dataFile.println("datetime,h2o_temp_deg_c");
-      dataFile.close();
-    }
-  } else {
-
-    //Write datastring and close logfile on SD card
-    dataFile = SD.open("HOURLY.CSV", FILE_WRITE);
-    if (dataFile)
-    {
-      dataFile.println(datastring);
-      dataFile.close();
+      digitalWrite(LED, HIGH);
+      delay(100);
+      digitalWrite(LED, LOW);
+      delay(100);
     }
   }
 
