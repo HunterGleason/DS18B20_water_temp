@@ -58,9 +58,9 @@ int send_hourly_data()
 
   // Provide power to Iridium Modem
   digitalWrite(IridPwrPin, HIGH);
-
-  // Allow power up
+  // Allow warm up
   delay(200);
+
 
   // Start the serial port connected to the satellite modem
   IridiumSerial.begin(19200);
@@ -82,8 +82,10 @@ int send_hourly_data()
     delay(1000);
   }
 
+
+
   // Set paramters for parsing the log file
-  CSV_Parser cp("sd", true, ',');
+  CSV_Parser cp("sf", true, ',');
 
   // Varibles for holding data fields
   char **datetimes;
@@ -98,9 +100,21 @@ int send_hourly_data()
   datetimes = (char**)cp["datetime"];
   h2o_temps = (float*)cp["h2o_temp_deg_c"];
 
-  //Formatted for CGI script >> sensor_letter_code:date_of_first_obs:hour_of_first_obs:data
-  String datastring = "B:" + String(datetimes[0]).substring(0, 10) + ":" + String(datetimes[0]).substring(11, 13) + ":";
+  //Binary bufffer for iridium transmission (max allowed buffer size 340 bytes)
+  uint8_t dt_buffer[340];
 
+  //Buffer index counter var
+  int buff_idx = 0;
+
+  //Formatted for CGI script >> sensor_letter_code:date_of_first_obs:hour_of_first_obs:data
+  String datestamp = "B:" + String(datetimes[0]).substring(0, 10) + ":" + String(datetimes[0]).substring(11, 13) + ":";
+
+  //Populate buffer with datestamp
+  for (int i = 0; i < datestamp.length(); i++)
+  {
+    dt_buffer[buff_idx] = datestamp.charAt(i);
+    buff_idx++;
+  }
 
   //For each hour 0-23
   for (int day_hour = 0; day_hour < 24; day_hour++)
@@ -108,7 +122,6 @@ int send_hourly_data()
 
     //Declare average vars for each HYDROS21 output
     float mean_temp;
-
     boolean is_first_obs = false;
     int N = 0;
 
@@ -150,87 +163,45 @@ int send_hourly_data()
 
 
       //Assemble the data string
-      datastring = datastring + String(round(mean_temp)) + ':';
+      String datastring =  String(round(mean_temp)) + ':';
 
 
+      //Populate the buffer with the datastring
+      for (int i = 0; i < datastring.length(); i++)
+      {
+        dt_buffer[buff_idx] = datastring.charAt(i);
+        buff_idx++;
+      }
     }
   }
 
+  //Indicate the modem is trying to send with LED
+  digitalWrite(LED, HIGH);
 
+  //transmit binary buffer data via iridium
+  err = modem.sendSBDBinary(dt_buffer, buff_idx);
 
-  //Binary bufffer for iridium transmission (max allowed buffer size 340 bytes)
-  uint8_t dt_buffer[340];
-
-  // Total bytes in Iridium message
-  int message_bytes = datastring.length();
-
-  //Set buffer index to zero
-  int buffer_idx = 0;
-
-  // A boolean var for keeping track of any send attempts that may have failed
-  boolean failed = false;
-
-  //For each byte in the message (i.e. each char)
-  for (int i = 0; i < message_bytes; i++)
+  //If transmission failed and message is not too large try once more, increase time out
+  if(err != 0 && err != 13)
   {
-
-    //Update the buffer at buffer index with corresponding char
-    dt_buffer[buffer_idx] = datastring.charAt(i);
-
-    // Check 340 bytes has been reached, or the end of the message
-    if (buffer_idx == 339 || i == message_bytes)
-    {
-
-      //Indicate the modem is trying to send with LED
-      digitalWrite(LED, HIGH);
-
-      //transmit binary buffer data via iridium
-      err = modem.sendSBDBinary(dt_buffer, buffer_idx);
-
-      //Will attempt 3 times before giving up
-      int attempt = 1;
-
-      // While message failed to send, or 3 attempts have been exceeded
-      while (err != 0 && attempt <= 3)
-      {
-        // Send the Iridium message
-        err = modem.begin();
-        err = modem.sendSBDBinary(dt_buffer, buffer_idx);
-        attempt = attempt + 1;
-
-      }
-
-      // If all three attempts failed, mark as failed
-      if (err != 0)
-      {
-        failed = true;
-      }
-
-      //Reset buffer index
-      buffer_idx = 0;
-      digitalWrite(LED, LOW);
-
-    } else {
-
-      //increment buffer index
-      buffer_idx++;
-    }
-
+    err = modem.begin();
+    modem.adjustSendReceiveTimeout(500);
+    err = modem.sendSBDBinary(dt_buffer, buff_idx);
 
   }
+  digitalWrite(LED, LOW);
+
 
   //Kill power to Iridium Modem by writing the base pin low on PN2222 transistor
   digitalWrite(IridPwrPin, LOW);
   delay(30);
 
 
-  //Remove previous daily values CSV as long as send was succesfull
-  if (failed == false)
+  //Remove previous daily values CSV as long as send was succesfull, or if message is more than 340 bites
+  if (err == 0 || err == 13)
   {
     SD.remove("/HOURLY.CSV");
   }
-
-  //Return err code
   return err;
 
 
