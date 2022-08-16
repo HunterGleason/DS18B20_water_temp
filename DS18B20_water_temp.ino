@@ -182,7 +182,7 @@ int send_hourly_data()
   err = modem.sendSBDBinary(dt_buffer, buff_idx);
 
   //If transmission failed and message is not too large try once more, increase time out
-  if(err != 0 && err != 13)
+  if (err != ISBD_SUCCESS)
   {
     err = modem.begin();
     modem.adjustSendReceiveTimeout(500);
@@ -198,10 +198,9 @@ int send_hourly_data()
 
 
   //Remove previous daily values CSV as long as send was succesfull, or if message is more than 340 bites
-  if (err == 0 || err == 13)
-  {
-    SD.remove("/HOURLY.CSV");
-  }
+
+  SD.remove("/HOURLY.CSV");
+
   return err;
 
 
@@ -284,7 +283,7 @@ void setup(void)
                            start_second);
 
   // Start up the DallasTemp library and test sensor
-  digitalWrite(TmpPwrPin,HIGH);
+  digitalWrite(TmpPwrPin, HIGH);
   delay(300);
   sensors.begin();
   sensors.setResolution(12);
@@ -297,7 +296,7 @@ void setup(void)
     digitalWrite(LED, LOW);
     delay(4000);
   }
-  digitalWrite(TmpPwrPin,LOW);
+  digitalWrite(TmpPwrPin, LOW);
 }
 
 /*
@@ -320,8 +319,8 @@ void loop(void)
   }
 
   //Drive temp. pwr pin high
-  digitalWrite(TmpPwrPin,HIGH);
-    
+  digitalWrite(TmpPwrPin, HIGH);
+
   //Set resolution to 12 bit, 10 bit is too corse
   sensors.setResolution(12);
 
@@ -334,7 +333,7 @@ void loop(void)
   float tempC = sensors.getTempCByIndex(0);
 
   //Drive temp. pwr pin high
-  digitalWrite(TmpPwrPin,LOW);
+  digitalWrite(TmpPwrPin, LOW);
 
   String datastring = present_time.timestamp() + "," + String(tempC);
 
@@ -387,7 +386,7 @@ void loop(void)
       }
     }
   } else {
-        // Indicate to user there was an issue by blinking built in LED
+    // Indicate to user there was an issue by blinking built in LED
     for (int i = 0; i < 100; i++)
     {
       digitalWrite(LED, HIGH);
