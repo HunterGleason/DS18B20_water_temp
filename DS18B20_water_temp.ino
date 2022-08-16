@@ -4,7 +4,7 @@
 #include "RTClib.h" //Needed for communication with Real Time Clock
 #include <SPI.h> //Needed for working with SD card
 #include <SD.h> //Needed for working with SD card
-#include "ArduinoLowPower.h" //Needed for putting Feather M0 to sleep between samples
+#include <ArduinoLowPower.h> //Needed for putting Feather M0 to sleep between samples
 #include <IridiumSBD.h> //Needed for communication with IRIDIUM modem 
 #include <CSV_Parser.h> //Needed for parsing CSV data
 #include <OneWire.h> //Needed for oneWire communication 
@@ -15,7 +15,6 @@
 const byte LED = 13; // Built in LED pin
 const byte chipSelect = 4; // Chip select pin for SD card
 const byte IridPwrPin = 6; // Power base PN2222 transistor pin to Iridium modem
-const byte TmpPwrPin = 11; // Pwr pin to temp. probe
 
 
 /*Define global vars */
@@ -95,6 +94,7 @@ int send_hourly_data()
   // Read HOURLY.CSV file
   cp.readSDfile("/HOURLY.CSV");
 
+  int num_rows = cp.getRowsCount();
 
   //Populate data arrays from logfile
   datetimes = (char**)cp["datetime"];
@@ -109,6 +109,15 @@ int send_hourly_data()
   //Formatted for CGI script >> sensor_letter_code:date_of_first_obs:hour_of_first_obs:data
   String datestamp = "B:" + String(datetimes[0]).substring(0, 10) + ":" + String(datetimes[0]).substring(11, 13) + ":";
 
+  int start_year = String(datetimes[0]).substring(0, 4).toInt();
+  int start_month = String(datetimes[0]).substring(5, 7).toInt();
+  int start_day = String(datetimes[0]).substring(8, 10).toInt();
+  int start_hour = String(datetimes[0]).substring(11, 13).toInt();
+  int end_year = String(datetimes[num_rows - 1]).substring(0, 4).toInt();
+  int end_month = String(datetimes[num_rows - 1]).substring(5, 7).toInt();
+  int end_day = String(datetimes[num_rows - 1]).substring(8, 10).toInt();
+  int end_hour = String(datetimes[num_rows - 1]).substring(11, 13).toInt();
+
   //Populate buffer with datestamp
   for (int i = 0; i < datestamp.length(); i++)
   {
@@ -117,60 +126,72 @@ int send_hourly_data()
   }
 
   //For each hour 0-23
-  for (int day_hour = 0; day_hour < 24; day_hour++)
+  for (int year_ = start_year; year_ <= end_year; year_++)
   {
-
-    //Declare average vars for each HYDROS21 output
-    float mean_temp;
-    boolean is_first_obs = false;
-    int N = 0;
-
-    //For each observation in the HOURLY.CSV
-    for (int i = 0; i < cp.getRowsCount(); i++) {
-
-      //Read the datetime and hour
-      String datetime = String(datetimes[i]);
-      int dt_hour = datetime.substring(11, 13).toInt();
-
-      //If the hour matches day hour
-      if (dt_hour == day_hour)
-      {
-
-        //Get data
-        float h2o_temp = h2o_temps[i];
-
-        //Check if this is the first observation for the hour
-        if (is_first_obs == false)
-        {
-          //Update average vars
-          mean_temp = h2o_temp;
-          is_first_obs = true;
-          N++;
-        } else {
-          //Update average vars
-          mean_temp = mean_temp + h2o_temp;
-          N++;
-        }
-
-      }
-    }
-
-    //Check if there were any observations for the hour
-    if (N > 0)
+    for (int month_ = start_month; month_ <= end_month; month_++)
     {
-      //Compute averages
-      mean_temp = (mean_temp / N) * 10.0;
-
-
-      //Assemble the data string
-      String datastring =  String(round(mean_temp)) + ':';
-
-
-      //Populate the buffer with the datastring
-      for (int i = 0; i < datastring.length(); i++)
+      for (int day_ = start_day; day_ <= end_day; day_++)
       {
-        dt_buffer[buff_idx] = datastring.charAt(i);
-        buff_idx++;
+        for (int day_hour = 0; day_hour < 24; day_hour++)
+        {
+
+          //Declare average vars for each HYDROS21 output
+          float mean_temp = -9999.0;
+          boolean is_first_obs = false;
+          int N = 0;
+
+          //For each observation in the HOURLY.CSV
+          for (int i = 0; i < num_rows; i++) {
+
+            //Read the datetime and hour
+            String datetime = String(datetimes[i]);
+            int dt_year = datetime.substring(0, 4).toInt();
+            int dt_month = datetime.substring(5, 7).toInt();
+            int dt_day = datetime.substring(8, 10).toInt();
+            int dt_hour = datetime.substring(11, 13).toInt();
+
+            //Check in the current observatioin falls withing time window
+            if (dt_year == year_ && dt_month == month_ && dt_day == day_ && dt_hour == day_hour)
+            {
+
+              //Get data
+              float h2o_temp = h2o_temps[i];
+
+              //Check if this is the first observation for the hour
+              if (is_first_obs == false)
+              {
+                //Update average vars
+                mean_temp = h2o_temp;
+                is_first_obs = true;
+                N++;
+              } else {
+                //Update average vars
+                mean_temp = mean_temp + h2o_temp;
+                N++;
+              }
+
+            }
+          }
+
+          //Check if there were any observations for the hour
+          if (N > 0)
+          {
+            //Compute averages
+            mean_temp = (mean_temp / (float) N) * 10.0;
+
+
+            //Assemble the data string
+            String datastring =  String(round(mean_temp)) + ':';
+
+
+            //Populate the buffer with the datastring
+            for (int i = 0; i < datastring.length(); i++)
+            {
+              dt_buffer[buff_idx] = datastring.charAt(i);
+              buff_idx++;
+            }
+          }
+        }
       }
     }
   }
@@ -217,8 +238,6 @@ void setup(void)
   digitalWrite(LED, LOW);
   pinMode(IridPwrPin, OUTPUT);
   digitalWrite(IridPwrPin, LOW);
-  pinMode(TmpPwrPin, OUTPUT);
-  digitalWrite(TmpPwrPin, HIGH);
 
   //Make sure a SD is available (2-sec flash LED means SD card did not initialize)
   while (!SD.begin(chipSelect)) {
@@ -283,8 +302,6 @@ void setup(void)
                            start_second);
 
   // Start up the DallasTemp library and test sensor
-  digitalWrite(TmpPwrPin, HIGH);
-  delay(300);
   sensors.begin();
   sensors.setResolution(12);
   sensors.requestTemperatures(); // Send the command to get temperatures
@@ -296,7 +313,6 @@ void setup(void)
     digitalWrite(LED, LOW);
     delay(4000);
   }
-  digitalWrite(TmpPwrPin, LOW);
 }
 
 /*
@@ -318,9 +334,6 @@ void loop(void)
     transmit_time = (transmit_time + TimeSpan(0, irid_freq_hrs, 0, 0));
   }
 
-  //Drive temp. pwr pin high
-  digitalWrite(TmpPwrPin, HIGH);
-
   //Set resolution to 12 bit, 10 bit is too corse
   sensors.setResolution(12);
 
@@ -332,60 +345,11 @@ void loop(void)
   // We use the function ByIndex, and as an example get the temperature from the first sensor only.
   float tempC = sensors.getTempCByIndex(0);
 
-  //Drive temp. pwr pin high
-  digitalWrite(TmpPwrPin, LOW);
-
   String datastring = present_time.timestamp() + "," + String(tempC);
 
   // Check if reading was successful
   if (tempC != DEVICE_DISCONNECTED_C)
   {
-
-    //Write header if first time writing to the logfile
-    if (!SD.exists(filestr.c_str()))
-    {
-      dataFile = SD.open(filestr.c_str(), FILE_WRITE);
-      if (dataFile)
-      {
-        dataFile.println("datetime,h2o_temp_deg_c");
-        dataFile.close();
-      }
-
-    } else {
-      //Write datastring and close logfile on SD card
-      dataFile = SD.open(filestr.c_str(), FILE_WRITE);
-      if (dataFile)
-      {
-        dataFile.println(datastring);
-        dataFile.close();
-      }
-
-    }
-
-
-    /*The HOURLY.CSV file is the same as the log-file, but only contains observations since the last transmission and is used by the send_hourly_data() function */
-
-    //Write header if first time writing to the DAILY file
-    if (!SD.exists("HOURLY.CSV"))
-    {
-      //Write datastring and close logfile on SD card
-      dataFile = SD.open("HOURLY.CSV", FILE_WRITE);
-      if (dataFile)
-      {
-        dataFile.println("datetime,h2o_temp_deg_c");
-        dataFile.close();
-      }
-    } else {
-
-      //Write datastring and close logfile on SD card
-      dataFile = SD.open("HOURLY.CSV", FILE_WRITE);
-      if (dataFile)
-      {
-        dataFile.println(datastring);
-        dataFile.close();
-      }
-    }
-  } else {
     // Indicate to user there was an issue by blinking built in LED
     for (int i = 0; i < 100; i++)
     {
@@ -395,6 +359,52 @@ void loop(void)
       delay(100);
     }
   }
+
+  //Write header if first time writing to the logfile
+  if (!SD.exists(filestr.c_str()))
+  {
+    dataFile = SD.open(filestr.c_str(), FILE_WRITE);
+    if (dataFile)
+    {
+      dataFile.println("datetime,h2o_temp_deg_c");
+      dataFile.close();
+    }
+
+  } else {
+    //Write datastring and close logfile on SD card
+    dataFile = SD.open(filestr.c_str(), FILE_WRITE);
+    if (dataFile)
+    {
+      dataFile.println(datastring);
+      dataFile.close();
+    }
+
+  }
+
+
+  /*The HOURLY.CSV file is the same as the log-file, but only contains observations since the last transmission and is used by the send_hourly_data() function */
+
+  //Write header if first time writing to the DAILY file
+  if (!SD.exists("HOURLY.CSV"))
+  {
+    //Write datastring and close logfile on SD card
+    dataFile = SD.open("HOURLY.CSV", FILE_WRITE);
+    if (dataFile)
+    {
+      dataFile.println("datetime,h2o_temp_deg_c");
+      dataFile.close();
+    }
+  } else {
+
+    //Write datastring and close logfile on SD card
+    dataFile = SD.open("HOURLY.CSV", FILE_WRITE);
+    if (dataFile)
+    {
+      dataFile.println(datastring);
+      dataFile.close();
+    }
+  }
+
 
   //Flash LED to idicate a sample was just taken
   digitalWrite(LED, HIGH);
